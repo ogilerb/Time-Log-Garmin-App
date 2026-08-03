@@ -1,0 +1,13 @@
+# Local development and testing only. deploy.sh installs requirements.txt on the
+# server and never this file, so nothing here reaches the Oracle box.
+#
+#   .venv/bin/pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest>=8.0
+# test_replay.py drives the app through fastapi.testclient.TestClient, which is a
+# thin wrapper over an HTTP client library and will not import without one. Plain
+# `fastapi` does not pull one in; only fastapi[standard] does. Starlette now wants
+# httpx2 -- pairing TestClient with the original httpx still works but warns.
+httpx2>=0.28

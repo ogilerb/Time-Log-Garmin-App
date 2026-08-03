@@ -1,0 +1,16 @@
+# Caddy: expose the time logger under https://your.domain/timelog
+#
+# Add inside the existing site block for your domain, then:
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+
+your.domain {
+    # ... whatever you already serve ...
+
+    handle_path /timelog/* {
+        reverse_proxy 127.0.0.1:8099
+    }
+}
+
+# handle_path (not handle) strips the /timelog prefix, so the app sees /v1/events.
+# Using plain `handle` instead would forward /timelog/v1/events and 404.

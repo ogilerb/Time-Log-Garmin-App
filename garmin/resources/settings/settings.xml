@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<settings>
+    <setting propertyKey="@Properties.serverUrl" title="@Strings.SettingServerUrl">
+        <settingConfig type="alphaNumeric" maxLength="160"/>
+    </setting>
+    <setting propertyKey="@Properties.authToken" title="@Strings.SettingAuthToken">
+        <settingConfig type="alphaNumeric" maxLength="80"/>
+    </setting>
+</settings>

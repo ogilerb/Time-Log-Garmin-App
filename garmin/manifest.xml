@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
+    <iq:application
+        entry="TimeLogApp"
+        id="0fc25af6824d4fe598118fa540e75b76"
+        launcherIcon="@Drawables.LauncherIcon"
+        minApiLevel="3.4.0"
+        name="@Strings.AppName"
+        type="watch-app">
+
+        <!-- fenix6pro covers the fenix 6 Pro / 6 Sapphire / 6 Pro Solar /
+             6 Pro Dual Power / quatix 6.
+             Other fenix 6 variants (fenix6, fenix6s, fenix6spro, fenix6xpro) can
+             be added here, but only after downloading their device files in the
+             Connect IQ SDK Manager. Listing an id whose device files are absent
+             produces "Invalid device id" warnings and builds nothing for it. -->
+        <iq:products>
+            <iq:product id="fenix6pro"/>
+        </iq:products>
+
+        <iq:permissions>
+            <!-- Communications: reach the logging server through the phone.
+                 Background: flush the queue after presses made out of range. -->
+            <iq:uses-permission id="Communications"/>
+            <iq:uses-permission id="Background"/>
+        </iq:permissions>
+
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+    </iq:application>
+</iq:manifest>

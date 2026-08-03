@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<strings>
+    <string id="AppName">Time Log</string>
+    <string id="SettingServerUrl">Server URL</string>
+    <string id="SettingServerUrlPrompt">Base URL, e.g. https://example.com/timelog</string>
+    <string id="SettingAuthToken">Auth token</string>
+    <string id="SettingAuthTokenPrompt">Shared secret from /etc/timelog.env</string>
+</strings>

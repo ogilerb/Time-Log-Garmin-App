@@ -1,0 +1,50 @@
+# Time logger configuration.
+#
+# Copy this to config.yaml and fill in the calendar ids:
+#
+#   cp config.example.yaml config.yaml
+#   .venv/bin/python list_calendars.py
+#
+# config.yaml is gitignored, because calendar ids identify your Google account's
+# private calendars.
+#
+# IMPORTANT: the ORDER of `domains` defines the index the watch sends over the
+# wire. Reordering or deleting an entry will misfile any presses still queued on
+# the watch, and changes what future presses mean. Append new domains at the
+# end; never reorder.
+#
+# `name`  -> the event title written into Google Calendar.
+# `short` -> what the watch shows in its menu (the fenix 6 screen is 260px and
+#            truncates long labels, so these are abbreviated by hand).
+# `calendar_id` -> run `python list_calendars.py` to print these.
+
+timezone: America/Vancouver
+
+domains:
+  - name: Compounding
+    short: Compounding
+    calendar_id: FILL_ME@group.calendar.google.com
+
+  - name: Enriching
+    short: Enriching
+    calendar_id: FILL_ME@group.calendar.google.com
+
+  - name: Essential
+    short: Essential
+    calendar_id: FILL_ME@group.calendar.google.com
+
+  - name: Professional, Other-Directed
+    short: "Prof: Other"
+    calendar_id: FILL_ME@group.calendar.google.com
+
+  - name: Professional, Self-Directed
+    short: "Prof: Self"
+    calendar_id: FILL_ME@group.calendar.google.com
+
+  - name: Unfocused/Idling/Unactivated
+    short: Unfocused
+    calendar_id: FILL_ME@group.calendar.google.com
+
+  - name: Waste
+    short: Waste
+    calendar_id: FILL_ME@group.calendar.google.com

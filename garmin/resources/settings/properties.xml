@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+Defaults compiled into the build.
+
+Settings sync from Garmin Connect Mobile is unreliable for sideloaded (non-store)
+apps. If editing these on the phone does not stick, fill them in here instead and
+rebuild - that path always works.
+
+Left empty on purpose. Filling them in bakes a real shared secret into the build,
+so from that point on treat this file as a secret: mark it skip-worktree to keep
+your filled-in copy out of every future commit. The README has the exact command
+under "6. Watch - settings" (an XML comment cannot hold it verbatim, because the
+flag's leading double hyphen is illegal in here).
+
+Note the SDK also copies the value into garmin/garmin-settings.json, which
+.gitignore already excludes.
+
+Empty values are handled gracefully: the watch shows a red "Set server in app
+settings" until both are present, so this never fails silently.
+-->
+<properties>
+    <property id="serverUrl" type="string"></property>
+    <property id="authToken" type="string"></property>
+</properties>

@@ -1,0 +1,37 @@
+# Install on the Oracle server as /etc/systemd/system/timelog.service
+#
+#   sudo cp timelog.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now timelog
+#   journalctl -u timelog -f
+#
+# Generate the shared secret once with:
+#   python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+# and put it in /etc/timelog.env as:
+#   TIMELOG_TOKEN_SECRET=...
+# then: sudo chmod 600 /etc/timelog.env
+
+[Unit]
+Description=Garmin time logger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=timelog
+WorkingDirectory=/opt/timelog
+EnvironmentFile=/etc/timelog.env
+ExecStart=/opt/timelog/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8099
+Restart=always
+RestartSec=5
+
+# The service only needs to read its own directory and write the SQLite db and
+# the refreshed token beside it.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/timelog
+
+[Install]
+WantedBy=multi-user.target
