@@ -17,6 +17,7 @@ using Toybox.Lang;
 module Log {
 
     const KEY_QUEUE   = "q";      // Array of press dictionaries awaiting ack
+    const KEY_QCOUNT  = "qn";     // Size of that array, stored separately
     const KEY_NEXTID  = "nid";    // Monotonic press id counter
     const KEY_CUR     = "cur";    // Domain index currently running, or null
     const KEY_SINCE   = "since";  // Epoch seconds the current domain started
@@ -68,15 +69,27 @@ module Log {
         return q;
     }
 
+    // Reads the stored count rather than the queue itself. The status line asks
+    // for this on every redraw, and queue() would rebuild up to MAX_QUEUE
+    // dictionaries out of storage just to have its size taken and be discarded.
     function pending() {
-        return queue().size();
+        var n = App.Storage.getValue(KEY_QCOUNT);
+        if (n == null || !(n instanceof Lang.Number)) {
+            // Absent on an install that predates the counter, so derive it once
+            // from the queue and seed it.
+            n = queue().size();
+            App.Storage.setValue(KEY_QCOUNT, n);
+        }
+        return n;
     }
 
+    // The only writer of KEY_QUEUE, which is what keeps the count honest.
     function saveQueue(q) {
         if (q.size() > MAX_QUEUE) {
             q = q.slice(q.size() - MAX_QUEUE, null);
         }
         App.Storage.setValue(KEY_QUEUE, q);
+        App.Storage.setValue(KEY_QCOUNT, q.size());
     }
 
     // Record a press. domainIdx is null for a stop.
