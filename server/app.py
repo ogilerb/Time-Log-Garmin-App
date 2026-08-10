@@ -100,14 +100,37 @@ def _close_open(open_ev: OpenEvent, end_ts: int) -> None:
         log.warning("open event %s was deleted in Google; dropping", open_ev.event_id)
 
 
+def _boundary(press: Press, open_ev: Optional[OpenEvent]) -> int:
+    """When this press counts as having happened.
+
+    Presses can be backdated on the watch -- "I switched an hour ago and forgot
+    to say so" -- so the timestamp is deliberately not always recent. What it
+    must never do is reach back past the start of the event it is closing, which
+    would leave two overlapping events in the calendar. Such a press is pulled
+    forward to leave the shortest block Google will accept.
+    """
+    if open_ev is None:
+        return press.t
+    floor = open_ev.start_ts + MIN_EVENT_SECONDS
+    if press.t < floor:
+        log.info(
+            "press %d backdated past the open event's start; clamping to %d",
+            press.id,
+            floor,
+        )
+        return floor
+    return press.t
+
+
 def _apply(press: Press) -> None:
     open_ev = store.get_open()
+    at = _boundary(press, open_ev)
 
     if press.a == "stop":
         if open_ev is None:
             log.info("stop with nothing open; ignoring")
             return
-        _close_open(open_ev, press.t)
+        _close_open(open_ev, at)
         store.clear_open()
         log.info("closed domain %d", open_ev.domain_idx)
         return
@@ -127,16 +150,16 @@ def _apply(press: Press) -> None:
         return
 
     if open_ev is not None:
-        _close_open(open_ev, press.t)
+        _close_open(open_ev, at)
         store.clear_open()
 
-    event_id = calendar.open_event(domain["calendar_id"], domain["name"], press.t)
+    event_id = calendar.open_event(domain["calendar_id"], domain["name"], at)
     store.set_open(
         OpenEvent(
             domain_idx=press.d,
             calendar_id=domain["calendar_id"],
             event_id=event_id,
-            start_ts=press.t,
+            start_ts=at,
         )
     )
 

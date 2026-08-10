@@ -93,11 +93,17 @@ module Log {
     }
 
     // Record a press. domainIdx is null for a stop.
-    function push(action, domainIdx) {
+    //
+    // ts is when the press counts as having happened, which is not always now:
+    // the menu lets a switch be backdated to when it really occurred. It is
+    // passed in rather than defaulted here so that the moment on the queue, the
+    // moment shown as the start of the running block, and the moment the server
+    // writes into the calendar are all the same number.
+    function push(action, domainIdx, ts) {
         var entry = {
             "id" => nextId(),
             "a"  => action,
-            "t"  => now()
+            "t"  => ts
         };
         if (domainIdx != null) {
             entry["d"] = domainIdx;

@@ -19,6 +19,25 @@ Seven domains, in the order the watch sends them:
 Tracking stops only when you explicitly pick **Stop tracking**. Nothing is
 auto-closed.
 
+### Two taps: what, then when
+
+Every press asks two questions — the domain you switched to, then **how long ago**
+that switch really happened: `Now`, `5 min ago`, through to `2 hours ago`.
+
+The second step is for noticing at 11:00 that you stopped Compounding at 10:00
+and never said so. Picking `1 hour ago` puts the boundary where it belongs
+instead of donating the hour to whatever was still running: the old event ends at
+10:00 and the new one starts there.
+
+A boundary can never be dragged behind the start of the event it closes, since
+that would leave two overlapping events in the calendar. The watch only offers
+offsets that fit inside the running block — press START two minutes into
+something and `Now` is the only choice — and the server clamps anything that
+still slips through, because its idea of what is open is the authoritative one.
+
+`Stop tracking` takes the same second step, for the evening you notice you never
+stopped at all.
+
 ---
 
 ## How often do I have to redo the Google auth?
@@ -55,6 +74,10 @@ The watch is deliberately dumb. It emits an append-only log of presses
 `(id, action, domain, timestamp)` and never sees a Google credential. The server
 owns all calendar state, which is what makes retries safe.
 
+Backdating needs no wire format of its own: a press that happened an hour ago is
+just a press whose timestamp is an hour old, which is the same thing the server
+already handles when a queued press finally syncs from out of range.
+
 This split is not a preference — it is forced by the platform:
 
 - **Google blocks OAuth in embedded webviews** (`disallowed_useragent`), and
@@ -81,7 +104,7 @@ garmin/                     Connect IQ watch app (Monkey C)
   source/
     TimeLogApp.mc           App entry point + background wakeup scheduling
     MainView.mc             "what's running, for how long" screen
-    MainDelegate.mc         Button handling and the domain menu
+    MainDelegate.mc         Button handling, the domain menu, the backdate menu
     Log.mc                  Durable press queue in Application.Storage
     Sync.mc                 HTTP to the server (SyncJob, DomainsJob)
     BgService.mc            Drains the queue while the app is closed
@@ -373,9 +396,10 @@ export TIMELOG_TOKEN_SECRET=...          # from /etc/timelog.env on the server
 export TIMELOG_URL=http://127.0.0.1:8099
 .venv/bin/python simulate_watch.py domains
 .venv/bin/python simulate_watch.py start 0 -3600   # started an hour ago
-.venv/bin/python simulate_watch.py start 6         # switch: closes the previous
+.venv/bin/python simulate_watch.py start 6 -600    # backdated switch: 10 min ago
 .venv/bin/python simulate_watch.py stop
-#   -> check Google Calendar: one 1h Compounding block, then a Waste block
+#   -> check Google Calendar: a 50m Compounding block, then a 10m Waste block
+#      meeting exactly at the backdated boundary
 
 # 3. The duplicate-prevention guarantee
 .venv/bin/python simulate_watch.py replay          # must NOT create a second event
@@ -387,7 +411,9 @@ curl -v "https://timelog.your-tailnet.ts.net/v1/domains" \
 ```
 
 Then in the Connect IQ simulator (it has real network access via the Mac): walk
-the menu, pick a domain, and confirm both the server log and Google Calendar.
+the menu, pick a domain, pick a backdate offset, and confirm both the server log
+and Google Calendar — including that both menus close and you land back on the
+running-block screen.
 Disable the phone connection in the simulator, make three presses, re-enable, and
 confirm all three replay in order into correctly adjacent events.
 
@@ -430,3 +456,10 @@ Connect IQ allows).
 - A running event is created with a 1-minute placeholder end (Google rejects
   `end <= start`) and stretched to the true time on each sync, so an in-progress
   block shows its real length.
+- **A backdated press is clamped, never rejected.** One that reaches behind the
+  start of the event it closes is pulled forward to leave a 1-minute block, so
+  the worst case is a boundary an hour off rather than two overlapping events.
+  The server logs it when this happens.
+- **Backdating still respects the 7-day plausibility guard.** The menu tops out
+  at two hours, so the two never interact; if you widen `Backdate.OFFSETS` past a
+  week, presses would start being dropped as implausible.

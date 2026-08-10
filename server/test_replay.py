@@ -149,13 +149,35 @@ def test_reselecting_running_domain_is_noop(client):
     assert client.fake.inserts == 1
 
 
-def test_backwards_timestamp_is_clamped(client):
-    """Never let Google see end <= start."""
+def test_backdated_switch_moves_the_boundary(client):
+    """The forgot-to-press case: the switch lands when it actually happened."""
     now = int(time.time())
-    post(client, [{"id": 1, "a": "start", "d": 0, "t": now - 600}])
-    post(client, [{"id": 2, "a": "start", "d": 1, "t": now - 900}])
-    ev1 = client.fake.events["ev1"]
+    post(client, [{"id": 1, "a": "start", "d": 0, "t": now - 7200}])
+    post(client, [{"id": 2, "a": "start", "d": 1, "t": now - 3600}])  # "1 hour ago"
+
+    evs = client.fake.events
+    assert evs["ev1"]["end"] == now - 3600
+    assert evs["ev2"]["start"] == now - 3600
+
+
+def test_backdate_cannot_reach_behind_the_open_event(client):
+    """Never let Google see end <= start, or two events overlapping."""
+    now = int(time.time())
+    post(client, [{"id": 1, "a": "start", "d": 0, "t": now - 120}])
+    post(client, [{"id": 2, "a": "start", "d": 1, "t": now - 3600}])
+
+    ev1, ev2 = client.fake.events["ev1"], client.fake.events["ev2"]
     assert ev1["end"] > ev1["start"]
+    assert ev2["start"] == ev1["end"]
+
+
+def test_backdated_stop_closes_at_the_chosen_time(client):
+    now = int(time.time())
+    post(client, [{"id": 1, "a": "start", "d": 0, "t": now - 3600}])
+    r = post(client, [{"id": 2, "a": "stop", "t": now - 900}])
+
+    assert client.fake.events["ev1"]["end"] == now - 900
+    assert r.json()["cur"] is None
 
 
 def test_implausible_timestamp_dropped(client):
