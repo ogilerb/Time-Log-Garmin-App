@@ -22,18 +22,34 @@ auto-closed.
 ### Two taps: what, then when
 
 Every press asks two questions — the domain you switched to, then **how long ago**
-that switch really happened: `Now`, `5 min ago`, through to `2 hours ago`.
+that switch really happened.
 
 The second step is for noticing at 11:00 that you stopped Compounding at 10:00
-and never said so. Picking `1 hour ago` puts the boundary where it belongs
-instead of donating the hour to whatever was still running: the old event ends at
-10:00 and the new one starts there.
+and never said so. Picking `1h ago` puts the boundary where it belongs instead of
+donating the hour to whatever was still running: the old event ends at 10:00 and
+the new one starts there.
+
+The rows coarsen as they go back, because that is how memory works — you know a
+switch was "about twenty minutes ago" to the minute, and seven hours back you do
+not:
+
+| Range | Step | Rows |
+|---|---|---|
+| `Now` → `55 min ago` | 5 minutes | 12 |
+| `1h ago` → `3h 45m ago` | 15 minutes | 12 |
+| `4h ago` → `12h ago` | 30 minutes | 17 |
+
+Forty-one rows at the deepest, against 145 for a flat 5-minute list to twelve
+hours. Twelve hours is the floor of the whole thing; past that, fix it in Google
+Calendar.
 
 A boundary can never be dragged behind the start of the event it closes, since
-that would leave two overlapping events in the calendar. The watch only offers
-offsets that fit inside the running block — press START two minutes into
-something and `Now` is the only choice — and the server clamps anything that
-still slips through, because its idea of what is open is the authoritative one.
+that would leave two overlapping events in the calendar. So the list is cut to
+whatever fits inside the running block — press START two minutes into something
+and `Now` is the only row, forty minutes in and it stops at `40 min ago`. All 41
+appear only when something has genuinely been running half a day, or when nothing
+is running at all. The server clamps anything that still slips through, because
+its idea of what is open is the authoritative one.
 
 `Stop tracking` takes the same second step, for the evening you notice you never
 stopped at all.
@@ -461,5 +477,12 @@ Connect IQ allows).
   the worst case is a boundary an hour off rather than two overlapping events.
   The server logs it when this happens.
 - **Backdating still respects the 7-day plausibility guard.** The menu tops out
-  at two hours, so the two never interact; if you widen `Backdate.OFFSETS` past a
-  week, presses would start being dropped as implausible.
+  at twelve hours, so the two never interact; if you widen `Backdate.BAND_ENDS`
+  past a week, presses would start being dropped as implausible.
+- **The backdate menu costs no storage and no battery worth measuring.** Nothing
+  about it is persisted — the offset exists only between the press and the queued
+  dictionary, which is the same four keys either way. The rows are built on the
+  press and freed when the menu closes: ~41 `MenuItem`s, a few KB of the app's
+  1.25MB, for a handful of milliseconds of work a few times a day. What a longer
+  list actually costs is seconds of lit screen while you scroll it, which is why
+  the steps coarsen and the list is cut to the running block.

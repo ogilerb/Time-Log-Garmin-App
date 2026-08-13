@@ -17,18 +17,34 @@ const MIN_BLOCK_SEC = 60;
 // donating the hour to whatever was still running.
 module Backdate {
 
-    // Offsets in seconds, and what the menu calls them. Same index in both.
-    const OFFSETS = [0, 300, 600, 900, 1800, 2700, 3600, 7200];
-    const LABELS = [
-        "Now",
-        "5 min ago",
-        "10 min ago",
-        "15 min ago",
-        "30 min ago",
-        "45 min ago",
-        "1 hour ago",
-        "2 hours ago"
-    ];
+    // The rows coarsen as they go back: every 5 minutes for the first hour,
+    // every 15 out to four hours, every half hour out to twelve.
+    //
+    // Resolution is spent where memory actually has it. You know a switch was
+    // "about twenty minutes ago" to the minute; seven hours back you do not, and
+    // a row per five minutes there would only be 84 more things to scroll past.
+    // A flat 5-minute list to twelve hours would be 145 rows; this is 41.
+    //
+    // Parallel arrays, same index in both: STEPS[b] is the gap between rows for
+    // every offset below BAND_ENDS[b].
+    const STEPS     = [ 300,   900,  1800];
+    const BAND_ENDS = [3600, 14400, 43200];
+
+    // The furthest back any row reaches, and the only place twelve hours is
+    // written down -- deriving it means the cap cannot drift from the bands.
+    function cap() {
+        return BAND_ENDS[BAND_ENDS.size() - 1];
+    }
+
+    // Gap between `off` and the next row after it, or 0 once past the last band.
+    function stepAfter(off) {
+        for (var b = 0; b < BAND_ENDS.size(); b += 1) {
+            if (off < BAND_ENDS[b]) {
+                return STEPS[b];
+            }
+        }
+        return 0;
+    }
 
     // How far back a press may reach.
     //
@@ -37,23 +53,51 @@ module Backdate {
     // the ceiling. The server clamps this as well -- its idea of what is open is
     // the authoritative one -- but offering a choice that will not be honoured
     // is worse than not offering it.
+    //
+    // This is also what keeps the menu short in practice: forty minutes into a
+    // block there is only room for eight rows, and the full 41 appear only when
+    // something has genuinely been running half a day.
     function limit() {
         if (Log.current() == null) {
-            return OFFSETS[OFFSETS.size() - 1];
+            return cap();
         }
         var room = Log.now() - Log.since() - MIN_BLOCK_SEC;
-        return (room < 0) ? 0 : room;
+        if (room < 0) {
+            return 0;
+        }
+        return (room > cap()) ? cap() : room;
     }
 
-    // Only the offsets that fit in that room. "Now" always fits, so the menu is
-    // never empty.
+    // Built rather than stored: generating the labels costs less code than
+    // spelling out 41 of them, and none of it survives the menu closing.
+    function label(sec) {
+        if (sec == 0) {
+            return "Now";
+        }
+        var h = sec / 3600;
+        var m = (sec % 3600) / 60;
+        if (h == 0) {
+            return Lang.format("$1$ min ago", [m.format("%d")]);
+        }
+        if (m == 0) {
+            return Lang.format("$1$h ago", [h.format("%d")]);
+        }
+        return Lang.format("$1$h $2$m ago", [h.format("%d"), m.format("%d")]);
+    }
+
+    // Only the offsets that fit in the room above. "Now" always fits, so the
+    // menu is never empty.
     function menu() {
         var m = new Ui.Menu2({:title => "How long ago?"});
         var max = limit();
-        for (var i = 0; i < OFFSETS.size(); i += 1) {
-            if (OFFSETS[i] <= max) {
-                m.addItem(new Ui.MenuItem(LABELS[i], null, OFFSETS[i], {}));
+        var off = 0;
+        while (off <= max) {
+            m.addItem(new Ui.MenuItem(label(off), null, off, {}));
+            var step = stepAfter(off);
+            if (step == 0) {
+                break;
             }
+            off += step;
         }
         return m;
     }
@@ -64,10 +108,14 @@ class MainDelegate extends Ui.BehaviorDelegate {
 
     function initialize() {
         BehaviorDelegate.initialize();
-        // Refresh names and repair local state on open. Cheap, and it means a
-        // domain renamed on the server shows up without touching the watch.
-        Net.inflight = new DomainsJob(method(:onDomains));
-        Net.inflight.start();
+        // Only once the cached names have aged out. This used to run on every
+        // single open, putting a Bluetooth round trip behind a button whose
+        // whole point is being cheap to press -- and the answer was all but
+        // always the list already held.
+        if (Log.domainsStale()) {
+            Net.inflight = new DomainsJob(method(:onDomains));
+            Net.inflight.start();
+        }
     }
 
     function onDomains(ok) {
@@ -146,6 +194,10 @@ class BackdateMenuDelegate extends Ui.Menu2InputDelegate {
         Net.inflight = new SyncJob(method(:onSynced));
         Net.inflight.start();
         Bg.sync();
+
+        // The errand is done, so the view underneath winds the app up shortly
+        // after it reappears rather than sitting in the foreground.
+        justLogged = true;
 
         // Both menus go: the domain list underneath has served its purpose, and
         // landing back on it would invite an immediate contradictory press.

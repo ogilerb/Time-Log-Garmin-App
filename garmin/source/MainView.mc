@@ -4,34 +4,51 @@ using Toybox.System;
 using Toybox.Timer;
 using Toybox.WatchUi as Ui;
 
-// Ceiling on how long the snapshot below may go unrefreshed while the clock is
-// ticking. Only reached if a tick and an unrelated requestUpdate coalesce into a
-// single frame; the ordinary path reloads on the spot.
-const RELOAD_BACKSTOP_SEC = 10;
-
-
-// What is running, and for how long.
+// The elapsed figure is wanted only to within a few minutes, so it is drawn to
+// the minute and refreshed once a minute.
 //
-// Elapsed time is derived from the stored start timestamp rather than counted,
-// so it stays correct across app restarts and does not drift.
+// At 1/60th of the old rate the per-frame storage reads stopped being worth
+// caching, which is why onUpdate below simply reloads: six lookups a minute is
+// nothing, and it buys back a display that is never stale and a view with no
+// invalidation rules to get wrong.
+const TICK_MS = 60 * 1000;
+
+// How long the app stays up with no input before closing itself.
+//
+// A foreground Connect IQ app holds the watch out of its low-power state however
+// little it draws, so once the redraw rate is down here, not being in the
+// foreground is the only saving left worth having.
+const IDLE_EXIT_SEC = 30;
+
+// The window after a press is committed, which is shorter because the errand is
+// done. It is not zero: the sync fired on the way out needs room to land, both
+// so the "unsent" line clears while it can still be seen, and so a press does
+// not routinely fall through to a background wakeup five minutes later -- that
+// would spend more battery than leaving early saves. If the phone is out of
+// range the press is already durable and the retry happens anyway.
+const POST_LOG_EXIT_SEC = 5;
+
+// Set by a press that has just been committed and consumed by the view it
+// returns to, which is the only place with the standing to close the app.
+var justLogged = false;
+
+
+// What is running, and roughly how long ago the last press was.
+//
+// Both figures are derived from stored timestamps rather than counted, so they
+// stay correct across app restarts and do not drift.
 class MainView extends Ui.View {
 
     hidden var _timer;
+    hidden var _exitTimer;
     hidden var _shown = false;
 
-    // Snapshot of the stored state this view draws. Reading it per frame meant
-    // six storage and property lookups every second for as long as the app sat
-    // on screen, so it is reloaded on the redraws that follow a state change
-    // instead. A tick is not one of those: it only advances the elapsed clock,
-    // which is arithmetic on _since and touches no storage at all.
     hidden var _cur;
     hidden var _since;
+    hidden var _last;
     hidden var _name;
     hidden var _configured;
     hidden var _pending;
-
-    hidden var _fromTick = false;
-    hidden var _loadedAt = 0;
 
     function initialize() {
         View.initialize();
@@ -43,35 +60,59 @@ class MainView extends Ui.View {
         _shown = true;
         reload();
         applyTimer();
+        armExit(justLogged ? POST_LOG_EXIT_SEC : IDLE_EXIT_SEC);
+        justLogged = false;
     }
 
     function onHide() {
         _shown = false;
         stopTimer();
+        // A menu is up, so the user is plainly still here. Closing the app out
+        // from under a half-made choice would be worse than any battery it
+        // saved; onShow arms the countdown again on the way back.
+        disarmExit();
     }
 
-    // -- snapshot ---------------------------------------------------------
+    // -- closing ----------------------------------------------------------
+
+    hidden function armExit(seconds) {
+        disarmExit();
+        _exitTimer = new Timer.Timer();
+        _exitTimer.start(method(:onExitDue), seconds * 1000, false);
+    }
+
+    hidden function disarmExit() {
+        if (_exitTimer != null) {
+            _exitTimer.stop();
+            _exitTimer = null;
+        }
+    }
+
+    function onExitDue() as Void {
+        System.exit();
+    }
+
+    // -- state ------------------------------------------------------------
 
     hidden function reload() {
         _cur        = Log.current();
         _since      = Log.since();
+        _last       = Log.lastPress();
         _name       = (_cur == null) ? null : Log.nameFor(_cur);
         _configured = Net.configured();
         _pending    = Log.pending();
-        _loadedAt   = Log.now();
     }
 
     // -- tick -------------------------------------------------------------
 
-    // The elapsed clock is the only thing on this screen that changes on its
-    // own, so the timer runs only while something is being tracked. Idle, the
-    // screen is static text and a 1Hz redraw would spend battery drawing
-    // identical pixels.
+    // Runs only while something on screen actually ages. Before the first press
+    // ever recorded there is no timestamp to count from, the display is fixed
+    // text, and a tick would redraw identical pixels forever.
     hidden function applyTimer() {
-        if (!_shown || _cur == null) {
-            stopTimer();
-        } else {
+        if (_shown && (_cur != null || _last > 0)) {
             startTimer();
+        } else {
+            stopTimer();
         }
     }
 
@@ -83,7 +124,7 @@ class MainView extends Ui.View {
             return;
         }
         _timer = new Timer.Timer();
-        _timer.start(method(:onTick), 1000, true);
+        _timer.start(method(:onTick), TICK_MS, true);
     }
 
     hidden function stopTimer() {
@@ -96,35 +137,28 @@ class MainView extends Ui.View {
     // Timer.start() requires a Method returning Void, so the annotation is load
     // bearing rather than decoration.
     function onTick() as Void {
-        _fromTick = true;
         Ui.requestUpdate();
     }
 
     // -- drawing ----------------------------------------------------------
 
-    hidden function formatElapsed(seconds) {
+    // Minutes and hours only. Seconds were a precision the display could not
+    // keep without a redraw every second, and that nothing here needs.
+    hidden function formatCoarse(seconds) {
         if (seconds < 0) { seconds = 0; }
         var h = seconds / 3600;
         var m = (seconds % 3600) / 60;
-        var s = seconds % 60;
-        return Lang.format("$1$:$2$:$3$", [
-            h.format("%d"), m.format("%02d"), s.format("%02d")
-        ]);
+        if (h == 0) {
+            return Lang.format("$1$m", [m.format("%d")]);
+        }
+        return Lang.format("$1$h $2$m", [h.format("%d"), m.format("%02d")]);
     }
 
     function onUpdate(dc) {
-        var t = Log.now();
+        reload();
+        applyTimer();
 
-        // Anything that is not our own tick got here through a requestUpdate
-        // raised by a callback that changed stored state -- new domain names, a
-        // sync ack, background data, changed settings -- so the snapshot is
-        // stale and gets reloaded. No caller needs to know that; asking for a
-        // redraw is enough.
-        if (!_fromTick || t - _loadedAt >= RELOAD_BACKSTOP_SEC) {
-            reload();
-            applyTimer();
-        }
-        _fromTick = false;
+        var t = Log.now();
 
         dc.setColor(Gfx.COLOR_BLACK, Gfx.COLOR_BLACK);
         dc.clear();
@@ -140,6 +174,14 @@ class MainView extends Ui.View {
             dc.setColor(Gfx.COLOR_WHITE, Gfx.COLOR_TRANSPARENT);
             dc.drawText(cx, cy, Gfx.FONT_MEDIUM, "Press START",
                         Gfx.TEXT_JUSTIFY_CENTER);
+
+            // Dates the stop, so an empty screen still says when it went empty.
+            if (_last > 0) {
+                dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
+                dc.drawText(cx, cy + 34, Gfx.FONT_XTINY,
+                            "last press " + formatCoarse(t - _last) + " ago",
+                            Gfx.TEXT_JUSTIFY_CENTER);
+            }
         } else {
             dc.setColor(Gfx.COLOR_LT_GRAY, Gfx.COLOR_TRANSPARENT);
             dc.drawText(cx, cy - 62, Gfx.FONT_XTINY, "TRACKING",
@@ -151,7 +193,7 @@ class MainView extends Ui.View {
 
             dc.setColor(Gfx.COLOR_GREEN, Gfx.COLOR_TRANSPARENT);
             dc.drawText(cx, cy - 8, Gfx.FONT_NUMBER_MEDIUM,
-                        formatElapsed(t - _since),
+                        formatCoarse(t - _since),
                         Gfx.TEXT_JUSTIFY_CENTER);
         }
 

@@ -21,11 +21,19 @@ module Log {
     const KEY_NEXTID  = "nid";    // Monotonic press id counter
     const KEY_CUR     = "cur";    // Domain index currently running, or null
     const KEY_SINCE   = "since";  // Epoch seconds the current domain started
+    const KEY_LAST    = "last";   // Epoch seconds of the most recent press
     const KEY_DOMAINS = "doms";   // Cached short names from the server
+    const KEY_DOMSAT  = "domsat"; // When that list was last fetched
 
     // The watch can hold roughly a month of heavy use offline. Beyond this the
     // oldest presses are dropped rather than growing storage without bound.
     const MAX_QUEUE = 200;
+
+    // How long a cached domain list is trusted. Fetching it is a Bluetooth round
+    // trip through the phone, which is the most expensive thing this app does --
+    // far more so than anything on screen. The names change on the order of
+    // never, so paying that on every open bought almost nothing.
+    const DOMAINS_TTL_SEC = 86400;
 
     // Names used until the server's list arrives. Order must match config.yaml.
     const DEFAULT_DOMAINS = [
@@ -112,7 +120,18 @@ module Log {
         var q = queue();
         q.add(entry);
         saveQueue(q);
+
+        // Stamped with ts, not the wall clock, so a backdated press reports the
+        // moment it is recorded against -- the same one the calendar will show.
+        App.Storage.setValue(KEY_LAST, ts);
         return entry;
+    }
+
+    // When the most recent press landed, or 0 if none ever has. Survives a stop,
+    // which is the point: "nothing running" is still worth dating.
+    function lastPress() {
+        var t = App.Storage.getValue(KEY_LAST);
+        return (t == null || !(t instanceof Lang.Number)) ? 0 : t;
     }
 
     // Drop everything the server confirmed it applied.
@@ -186,6 +205,24 @@ module Log {
 
     function setDomains(names) {
         App.Storage.setValue(KEY_DOMAINS, names);
+        App.Storage.setValue(KEY_DOMSAT, now());
+    }
+
+    // Whether the cached list has aged out and is worth a round trip.
+    function domainsStale() {
+        var d = App.Storage.getValue(KEY_DOMAINS);
+        if (d == null || !(d instanceof Lang.Array) || d.size() == 0) {
+            return true;   // never fetched; DEFAULT_DOMAINS is only a guess
+        }
+        var at = App.Storage.getValue(KEY_DOMSAT);
+        if (at == null || !(at instanceof Lang.Number)) {
+            return true;
+        }
+        // A clock that moved backwards -- timezone, or a manual set -- would
+        // otherwise pin the list as fresh for a day, so treat any negative age
+        // as stale rather than trusting the arithmetic.
+        var age = now() - at;
+        return age < 0 || age >= DOMAINS_TTL_SEC;
     }
 
     function nameFor(idx) {
